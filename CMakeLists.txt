@@ -1,6 +1,11 @@
 CMAKE_MINIMUM_REQUIRED (VERSION 3.1.3)
 PROJECT (libslave)
 
+SET (LIBSLAVE_VERSION_MAJOR 2)
+SET (LIBSLAVE_VERSION_MINOR 0)
+SET (LIBSLAVE_VERSION_PATCH 1)
+SET (LIBSLAVE_VERSION "${LIBSLAVE_VERSION_MAJOR}.${LIBSLAVE_VERSION_MINOR}.${LIBSLAVE_VERSION_PATCH}")
+
 # Build flags
 SET (CMAKE_CXX_STANDARD 11)
 SET (CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -9,6 +14,7 @@ SET (CMAKE_CXX_EXTENSIONS FALSE)
 IF (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
  OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Common options
+    ADD_DEFINITIONS (-fPIC)
     ADD_DEFINITIONS (-pipe)
     ADD_DEFINITIONS (-Wall)
     ADD_DEFINITIONS (-O2)
@@ -20,40 +26,35 @@ FIND_PACKAGE (Boost REQUIRED)
 INCLUDE_DIRECTORIES (${Boost_INCLUDE_DIRS})
 FIND_PACKAGE (Boost 1.41.0 COMPONENTS unit_test_framework system)
 
-INCLUDE (FindPackageHandleStandardArgs)
 FIND_PATH (IMYSQL mysql/mysql.h)
-FIND_LIBRARY (LMYSQLCLIENT_R NAMES libmysqlclient_r.a
-                                   libmysqlclient.a
-                                   libmysqlclient_r.so
-                                   libmysqlclient.so PATH_SUFFIXES mysql)
-SET (Mysql_FIND_REQUIRED YES)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(Mysql DEFAULT_MSG IMYSQL LMYSQLCLIENT_R)
-INCLUDE_DIRECTORIES ("${IMYSQL}/mysql")
+FIND_LIBRARY (LMYSQLCLIENT_R_A NAMES libmysqlclient_r.a
+                                     libmysqlclient.a PATH_SUFFIXES mysql)
+FIND_LIBRARY (LMYSQLCLIENT_R_SO NAMES libmysqlclient_r.so
+                                      libmysqlclient.so PATH_SUFFIXES mysql)
+if (NOT LMYSQLCLIENT_R_A AND NOT LMYSQLCLIENT_R_SO)
+    message(FATAL_ERROR "mysql library not found")
+endif()
 
-# Check whether we've found static or dynamic library
-STRING (REGEX MATCH ".*\\.a$" MYSQL_IS_STATIC ${LMYSQLCLIENT_R})
-IF (MYSQL_IS_STATIC STREQUAL LMYSQLCLIENT_R)
-    SET (MYSQL_IS_STATIC ON)
-ELSE ()
-    SET (MYSQL_IS_STATIC OFF)
-ENDIF ()
+INCLUDE_DIRECTORIES ("${IMYSQL}/mysql")
 
 FILE (GLOB HDR "*.h")
 INSTALL (FILES ${HDR} DESTINATION include)
+
 AUX_SOURCE_DIRECTORY (${CMAKE_SOURCE_DIR} SRC)
 
-ADD_LIBRARY (slave_a ${SRC})
-SET_TARGET_PROPERTIES (slave_a PROPERTIES OUTPUT_NAME slave)
-TARGET_LINK_LIBRARIES (slave_a ${LMYSQLCLIENT_R})
-INSTALL (TARGETS slave_a DESTINATION lib64)
+if (LMYSQLCLIENT_R_A)
+    ADD_LIBRARY (slave_a ${SRC})
+    SET_TARGET_PROPERTIES (slave_a PROPERTIES OUTPUT_NAME slave)
+    TARGET_LINK_LIBRARIES (slave_a ${LMYSQLCLIENT_R_A} dl)
+    INSTALL (TARGETS slave_a DESTINATION lib64)
+endif()
 
-# Most probably statc mysql is built without fPIC, so, we can't build dynamic library with it
-IF (NOT MYSQL_IS_STATIC)
+if (LMYSQLCLIENT_R_SO)
     ADD_LIBRARY (slave_so SHARED ${SRC})
-    SET_TARGET_PROPERTIES (slave_so PROPERTIES OUTPUT_NAME slave)
-    TARGET_LINK_LIBRARIES (slave_so ${LMYSQLCLIENT_R})
+    SET_TARGET_PROPERTIES (slave_so PROPERTIES OUTPUT_NAME slave VERSION ${LIBSLAVE_VERSION} SOVERSION ${LIBSLAVE_VERSION_MAJOR})
+    TARGET_LINK_LIBRARIES (slave_so ${LMYSQLCLIENT_R_SO})
     INSTALL (TARGETS slave_so DESTINATION lib64)
-ENDIF ()
+endif()
 
 IF (Boost_FOUND)
     ENABLE_TESTING ()

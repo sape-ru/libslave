@@ -4,6 +4,7 @@
 #include <inttypes.h>
 #include <string>
 #include <time.h>
+#include <cstring>
 
 namespace slave {
 namespace types
